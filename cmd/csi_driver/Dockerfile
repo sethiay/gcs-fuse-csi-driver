@@ -48,6 +48,9 @@ FROM distroless-$TARGETARCH AS output-image
 # Copy the mount/umount binaries
 COPY --from=debian /bin/mount /bin/mount
 COPY --from=debian /bin/umount /bin/umount
+COPY --from=debian /bin/mountpoint /bin/mountpoint
+COPY --from=debian /bin/sh /bin/sh
+COPY --from=debian /bin/cat /bin/cat
 
 # Copy shared libraries into distroless base.
 COPY --from=debian ${LD_LINUX_FILE} ${LIB_DIR}

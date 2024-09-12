@@ -104,7 +104,10 @@ func (m *Mounter) Mount(source string, target string, fstype string, options []s
 		// or the mount point is cleaned up due to mounting failures.
 		if err := updateReadAhead(target, 4096); err != nil {
 			klog.Errorf("%v failed to update read_ahead: %v", logPrefix, err)
+		} else {
+			klog.Errorf("%v able to change read_ahead: %v", logPrefix, err)
 		}
+
 	}()
 
 	listener, err := m.createSocket(target, logPrefix)
