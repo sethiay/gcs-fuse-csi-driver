@@ -24,7 +24,9 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -95,6 +97,15 @@ func (m *Mounter) Mount(source string, target string, fstype string, options []s
 	if err != nil {
 		return fmt.Errorf("failed to mount the fuse filesystem: %w", err)
 	}
+
+	go func() {
+		// updateReadAhead may hang until the file descriptor (fd) is either consumed or canceled.
+		// It will succeed if dfuse finishes the mount process, or it will fail if dfuse fails
+		// or the mount point is cleaned up due to mounting failures.
+		if err := updateReadAhead(target, 4096); err != nil {
+			klog.Errorf("%v failed to update read_ahead: %v", logPrefix, err)
+		}
+	}()
 
 	listener, err := m.createSocket(target, logPrefix)
 	if err != nil {
@@ -261,4 +272,49 @@ func prepareMountOptions(options []string) ([]string, []string) {
 	}
 
 	return csiMountOptions, optionSet.List()
+}
+
+func updateReadAhead(targetMountPath string, readAheadKB int64) error {
+	cmd := exec.Command("mountpoint", "-d", targetMountPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		klog.Errorf("Error executing mountpoint command on target path %s: %v", targetMountPath, err)
+		if exitError, ok := err.(*exec.ExitError); ok {
+			fmt.Printf("Exit code: %d\n", exitError.ExitCode())
+		}
+		return err
+	}
+
+	outputStr := strings.TrimSpace(string(output))
+	klog.Infof("output of mountpoint for target mount path %s: %s", targetMountPath, output)
+
+	// Update the target value
+	sysClassEchoCmd := fmt.Sprintf("echo %d > /sys/class/bdi/%s/read_ahead_kb", readAheadKB, outputStr)
+	klog.V(2).Infof("Executing command %s", sysClassEchoCmd)
+	cmd = exec.Command("sh", "-c", sysClassEchoCmd)
+	_, err = cmd.CombinedOutput()
+	if err != nil {
+		return err
+	}
+
+	// Verify updated value
+	sysClassCatCmd := fmt.Sprintf("cat /sys/class/bdi/%s/read_ahead_kb", outputStr)
+	klog.V(2).Infof("Executing command %s", sysClassCatCmd)
+	cmd = exec.Command("sh", "-c", sysClassCatCmd)
+	op, err := cmd.CombinedOutput()
+	if err != nil {
+		return err
+	}
+	klog.V(2).Infof("Output of %q : %s", sysClassCatCmd, op)
+
+	opStr := strings.TrimSpace(string(op))
+	updatedVal, err := strconv.ParseInt(opStr, 10, 0)
+	if err != nil {
+		return fmt.Errorf("invalid read_ahead_kb %v", err)
+	}
+	if updatedVal != readAheadKB {
+		return fmt.Errorf("mismatch in read_ahead_kb, expected %d, got %d", readAheadKB, updatedVal)
+	}
+
+	return nil
 }
