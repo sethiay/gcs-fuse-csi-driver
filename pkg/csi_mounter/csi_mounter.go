@@ -102,7 +102,7 @@ func (m *Mounter) Mount(source string, target string, fstype string, options []s
 		// updateReadAhead may hang until the file descriptor (fd) is either consumed or canceled.
 		// It will succeed if dfuse finishes the mount process, or it will fail if dfuse fails
 		// or the mount point is cleaned up due to mounting failures.
-		if err := updateReadAhead(target, 4096); err != nil {
+		if err := updateReadAhead(target, 1024); err != nil {
 			klog.Errorf("%v failed to update read_ahead: %v", logPrefix, err)
 		} else {
 			klog.Errorf("%v able to change read_ahead: %v", logPrefix, err)
